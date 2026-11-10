@@ -8,7 +8,7 @@ on:
   workflow_dispatch:
     inputs:
       karate_env:
-        description: 'Environment to run against'
+        description: 'Target Environment'
         required: true
         default: 'qa'
         type: choice
@@ -16,16 +16,12 @@ on:
           - dev
           - qa
           - staging
-      tags:
-        description: 'Karate tags to execute (e.g., @smoke, @regression)'
-        required: false
-        default: '@smoke or @regression'
 
 jobs:
   api-tests:
     name: Execute Karate API Tests
     runs-on: ubuntu-latest
-    timeout-minutes: 20
+    timeout-minutes: 15
 
     steps:
       - name: Checkout Code
@@ -38,14 +34,16 @@ jobs:
           java-version: '17'
           cache: 'maven'
 
+      - name: Verify Project Structure in CI
+        run: |
+          echo "Listing test resources:"
+          find src/test -type f
+
       - name: Run Karate Test Suite
         env:
-          ENV_NAME: ${{ inputs.karate_env || 'qa' }}
-          TEST_TAGS: ${{ inputs.tags || '@smoke or @regression' }}
+          ENV_NAME: ${{ github.event.inputs.karate_env || 'qa' }}
         run: |
-          mvn clean test \
-            -Dkarate.env="$ENV_NAME" \
-            -Dkarate.options="--tags '$TEST_TAGS'"
+          mvn clean test -Dkarate.env="$ENV_NAME"
 
       - name: Upload Karate HTML Report
         if: always()
@@ -53,30 +51,12 @@ jobs:
         with:
           name: karate-execution-report
           path: target/karate-reports/
-          retention-days: 14
+          retention-days: 7
 
-      - name: Publish JUnit Test Results
+      - name: Publish Test Report
         if: always()
         uses: dorny/test-reporter@v1
         with:
           name: API Test Results
           path: target/surefire-reports/*.xml
           reporter: java-junit
-
-      - name: Ingest Test Results into QMetry Test Cycle
-        if: always()
-        env:
-          QMETRY_API_KEY: ${{ secrets.QMETRY_API_KEY }}
-        run: |
-          # Compress surefire XML reports
-          zip -r test-results.zip target/surefire-reports/*.xml
-          
-          # Push results directly to QMetry for Jira
-          curl -X POST "https://qtm4j.qmetry.com/rest/api/automation/importresults" \
-            -H "Content-Type: multipart/form-data" \
-            -H "apiKey: $QMETRY_API_KEY" \
-            -F "file=@test-results.zip" \
-            -F "format=junit/xml" \
-            -F "testCycleTitle=Sprint 0 - API Regression Cycle v1.0.0" \
-            -F "environment=QA" \
-            -F "projectKey=SCRUM-5"
