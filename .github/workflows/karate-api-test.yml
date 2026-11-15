@@ -62,29 +62,35 @@ jobs:
           QMETRY_API_KEY: ${{ secrets.QMETRY_API_KEY }}
           ENV_NAME: ${{ github.event.inputs.karate_env || 'qa' }}
         run: |
-          zip -j test-results.zip target/surefire-reports/*.xml
+          zip -j cucumber-results.zip target/karate-reports/*.json
 
-          RESPONSE=$(curl -s -X POST "https://qtmcloud.qmetry.com/rest/api/automation/importresults" \
+          RESPONSE=$(curl -s -X POST "https://qtmcloud.qmetry.com/rest/api/latest/importresults" \
             -H "Content-Type: application/json" \
             -H "apiKey: $QMETRY_API_KEY" \
             -d '{
-              "format": "junit",
+              "format": "cucumber",
+              "isZip": true,
               "testCycleToReuse": "SCRUM-TR-1",
               "environment": "'"$ENV_NAME"'",
-              "automationHierarchy": 2,
-              "appendTestName": false
+              "matchTestSteps": true
             }')
 
           echo "QMetry Init Response: $RESPONSE"
           UPLOAD_URL=$(echo "$RESPONSE" | jq -r '.url')
 
           if [ "$UPLOAD_URL" = "null" ] || [ -z "$UPLOAD_URL" ]; then
-            echo "Failed to obtain QMetry upload URL. Verify QMETRY_API_KEY."
+            echo "Failed to obtain QMetry upload URL. Check API key or endpoint."
             exit 1
           fi
 
-          curl -s -X PUT "$UPLOAD_URL" \
+          HTTP_STATUS=$(curl -s -o /dev/null -w "%{http_code}" -X PUT "$UPLOAD_URL" \
             -H "Content-Type: multipart/form-data" \
-            --upload-file test-results.zip
+            --upload-file cucumber-results.zip)
+
+          echo "S3 Upload HTTP Status: $HTTP_STATUS"
+          if [ "$HTTP_STATUS" -ne 200 ]; then
+            echo "File upload to QMetry storage failed."
+            exit 1
+          fi
 
           echo "Results uploaded to QMetry successfully."
