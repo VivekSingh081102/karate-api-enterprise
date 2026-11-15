@@ -1,4 +1,4 @@
-name: API Regression Pipeline
+name: Enterprise API Automation Pipeline
 
 on:
   push:
@@ -19,7 +19,7 @@ on:
 
 jobs:
   api-tests:
-    name: Execute Karate API Tests
+    name: Execute Karate API Tests & Sync QMetry
     runs-on: ubuntu-latest
     timeout-minutes: 15
 
@@ -33,11 +33,6 @@ jobs:
           distribution: 'temurin'
           java-version: '17'
           cache: 'maven'
-
-      - name: Verify Project Structure in CI
-        run: |
-          echo "Listing test resources:"
-          find src/test -type f
 
       - name: Run Karate Test Suite
         env:
@@ -53,10 +48,43 @@ jobs:
           path: target/karate-reports/
           retention-days: 7
 
-      - name: Publish Test Report
+      - name: Publish Test Report to GitHub
         if: always()
         uses: dorny/test-reporter@v1
         with:
           name: API Test Results
           path: target/surefire-reports/*.xml
           reporter: java-junit
+
+      - name: Import Execution Results into QMetry (SCRUM-TR-1)
+        if: always()
+        env:
+          QMETRY_API_KEY: ${{ secrets.QMETRY_API_KEY }}
+          ENV_NAME: ${{ github.event.inputs.karate_env || 'qa' }}
+        run: |
+          zip -j test-results.zip target/surefire-reports/*.xml
+
+          RESPONSE=$(curl -s -X POST "https://qtmcloud.qmetry.com/rest/api/automation/importresults" \
+            -H "Content-Type: application/json" \
+            -H "apiKey: $QMETRY_API_KEY" \
+            -d '{
+              "format": "junit",
+              "testCycleToReuse": "SCRUM-TR-1",
+              "environment": "'"$ENV_NAME"'",
+              "automationHierarchy": 2,
+              "appendTestName": false
+            }')
+
+          echo "QMetry Init Response: $RESPONSE"
+          UPLOAD_URL=$(echo "$RESPONSE" | jq -r '.url')
+
+          if [ "$UPLOAD_URL" = "null" ] || [ -z "$UPLOAD_URL" ]; then
+            echo "Failed to obtain QMetry upload URL. Verify QMETRY_API_KEY."
+            exit 1
+          fi
+
+          curl -s -X PUT "$UPLOAD_URL" \
+            -H "Content-Type: multipart/form-data" \
+            --upload-file test-results.zip
+
+          echo "Results uploaded to QMetry successfully."
