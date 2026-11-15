@@ -64,7 +64,8 @@ jobs:
         run: |
           zip -j cucumber-results.zip target/karate-reports/*.json
 
-          RESPONSE=$(curl -s -X POST "https://qtmcloud.qmetry.com/rest/api/latest/importresults" \
+          RESPONSE=$(curl -sS --connect-timeout 15 --max-time 60 \
+            -X POST "https://qtmcloud.qmetry.com/rest/api/latest/importresults" \
             -H "Content-Type: application/json" \
             -H "apiKey: $QMETRY_API_KEY" \
             -d '{
@@ -83,7 +84,8 @@ jobs:
             exit 1
           fi
 
-          HTTP_STATUS=$(curl -s -o /dev/null -w "%{http_code}" -X PUT "$UPLOAD_URL" \
+          HTTP_STATUS=$(curl -sS --connect-timeout 15 --max-time 60 \
+            -o /dev/null -w "%{http_code}" -X PUT "$UPLOAD_URL" \
             -H "Content-Type: multipart/form-data" \
             --upload-file cucumber-results.zip)
 
