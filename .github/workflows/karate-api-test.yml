@@ -48,14 +48,6 @@ jobs:
           path: target/karate-reports/
           retention-days: 7
 
-      - name: Publish Test Report to GitHub
-        if: always()
-        uses: dorny/test-reporter@v1
-        with:
-          name: API Test Results
-          path: target/surefire-reports/*.xml
-          reporter: java-junit
-
       - name: Import Execution Results into QMetry (SCRUM-TR-1)
         if: always()
         env:
@@ -65,7 +57,7 @@ jobs:
           zip -j cucumber-results.zip target/karate-reports/*.json
 
           RESPONSE=$(curl -sS --connect-timeout 15 --max-time 60 \
-            -X POST "https://qtmcloud.qmetry.com/rest/api/latest/importresults" \
+            -X POST "https://qtmcloud.qmetry.com/rest/api/automation/importresult" \
             -H "Content-Type: application/json" \
             -H "apiKey: $QMETRY_API_KEY" \
             -d '{
@@ -87,7 +79,7 @@ jobs:
           HTTP_STATUS=$(curl -sS --connect-timeout 15 --max-time 60 \
             -o /dev/null -w "%{http_code}" -X PUT "$UPLOAD_URL" \
             -H "Content-Type: multipart/form-data" \
-            --upload-file cucumber-results.zip)
+            --data-binary "@cucumber-results.zip")
 
           echo "S3 Upload HTTP Status: $HTTP_STATUS"
           if [ "$HTTP_STATUS" -ne 200 ]; then
